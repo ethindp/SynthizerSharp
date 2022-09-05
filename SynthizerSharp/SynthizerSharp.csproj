@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>10.0</LangVersion>
     <NullableReferenceTypes>true</NullableReferenceTypes>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

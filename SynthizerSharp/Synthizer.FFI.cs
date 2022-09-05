@@ -18,8 +18,8 @@ public struct UserAutomationEventPayload
 public struct AutomationEvent
 {
     public EventType Type;
-    public int Source;
-    public int Context;
+    public ulong Source;
+    public ulong Context;
     public UserAutomationEventPayload Payload;
 }
 
@@ -28,15 +28,15 @@ public struct AutomationCommandParameters
 {
     [FieldOffset(0)]
     public AutomationAppendPropertyCommand AppendToProperty;
-    [FieldOffset(sizeof(AutomationAppendPropertyCommand))]
+    [FieldOffset(0)]
     public AutomationClearPropertyCommand ClearProperty;
-    [FieldOffset(sizeof(AutomationAppendPropertyCommand) + sizeof(AutomationClearPropertyCommand))]
+    [FieldOffset(0)]
     public AutomationSendUserEventCommand SendUserEvent;
 }
 
-public struct automationCommandData
+public struct AutomationCommandData
 {
-    public int Target;
+    public ulong Target;
     public double Time;
     public AutomationCommand Command;
     public uint Flags;
@@ -61,6 +61,7 @@ public struct LibraryConfig
 {
     public LogLevel LogLevel;
     public LoggingBackend LoggingBackend;
+    [MarshalAs(UnmanagedType.LPStr)]
     public string LibsndfilePath;
 }
 
@@ -81,10 +82,10 @@ public struct BiquadConfig
     public bool IsWire;
 }
 
-public struct AutomationPoint
+public unsafe struct AutomationPoint
 {
-    public int InterpolationType;
-    public Span<double> Values;
+    public InterpolationType InterpolationType;
+    public fixed double Values[6];
     public ulong Flags;
 }
 
@@ -111,9 +112,9 @@ public struct SineBankWave
     public double Gain;
 }
 
-public struct SineBankConfig
+public unsafe struct SineBankConfig
 {
-    public Span<SineBankWave> Waves;
+    public SineBankWave* Waves;
     public ulong WaveCount;
     public double InitialFrequency;
 }
@@ -242,21 +243,21 @@ public enum AutomationCommand
     ClearAllProperties
 }
 
-public delegate void UserDataFreeCallback(Span<byte> data);
-public delegate int StreamReadCallback(out ulong read, ulong requested, out Span<byte> destination, Span<byte>? userdata, out string errmsg);
-public delegate int StreamSeekCallback(ulong pos, Span<byte>? userdata, out string errmsg);
-public delegate int StreamCloseCallback(Span<byte>? userdata, out string errmsg);
-public delegate int StreamDestroyCallback(Span<byte>? userdata);
-public delegate int StreamOpenCallback(CustomStreamDefinition callbacks, string protocol, string path, Span<byte>? param, Span<byte>? userdata, out string errmsg);
+public unsafe delegate void UserDataFreeCallback(void* data);
+public unsafe delegate int StreamReadCallback(out ulong read, ulong requested, out Span<byte> destination, void* userdata, [MarshalAs(UnmanagedType.LPStr)] out string errmsg);
+public unsafe delegate int StreamSeekCallback(ulong pos, void* userdata, out string errmsg);
+public unsafe delegate int StreamCloseCallback(void* userdata, [MarshalAs(UnmanagedType.LPStr)] out string errmsg);
+public unsafe delegate int StreamDestroyCallback(void* userdata);
+public unsafe delegate int StreamOpenCallback(CustomStreamDefinition callbacks, [MarshalAs(UnmanagedType.LPStr)] string protocol, [MarshalAs(UnmanagedType.LPStr)] string path, void* param, void* userdata, [MarshalAs(UnmanagedType.LPStr)] out string errmsg);
 
-public struct CustomStreamDefinition
+public unsafe struct CustomStreamDefinition
 {
     public StreamReadCallback Read;
     public StreamSeekCallback Seek;
     public StreamCloseCallback Close;
     public StreamDestroyCallback Destroy;
     public long length;
-    public Span<byte>? userdata;
+    public void* userdata;
 }
 
 public interface IRawSynthizer : IDisposable
@@ -264,81 +265,82 @@ public interface IRawSynthizer : IDisposable
     void syz_getVersion(out ulong major, out ulong minor, out ulong patch);
     void syz_eventDeinit(ref AutomationEvent evt);
     void syz_libraryConfigSetDefaults(out LibraryConfig config);
-    int syz_initialize();
-    int syz_initializeWithConfig(ref LibraryConfig config);
-    int syz_shutdown();
-    int syz_getLastErrorCode();
+    nint syz_initialize();
+    nint syz_initializeWithConfig(ref LibraryConfig config);
+    nint syz_shutdown();
+    nint syz_getLastErrorCode();
+    [return: MarshalAs(UnmanagedType.LPStr)]
     string syz_getLastErrorMessage();
-    int syz_handleIncRef(int handle);
-    int syz_handleDecRef(int handle);
+    nint syz_handleIncRef(ulong handle);
+    nint syz_handleDecRef(ulong handle);
     void syz_initDeleteBehaviorConfig(out DeleteBehaviorConfig config);
-    int syz_configDeleteBehavior(int obj, ref DeleteBehaviorConfig cfg);
-    int syz_handleGetObjectType(out ObjectType type, int handle);
-    int syz_handleGetUserdata(out Span<byte> data, int handle);
-    int syz_handleSetUserdata(int handle, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_pause(int handle);
-    int syz_play(int handle);
-    int syz_getI(out int value, int handle, Property property);
-    int syz_setI(int target, Property property, int value);
-    int syz_getD(out double value, int handle, Property property);
-    int syz_setD(int target, Property property, double value);
-    int syz_setO(int target, Property property, int value);
-    int syz_getD3(out double x, out double y, out double z, int handle, Property property);
-    int syz_setD3(int handle, Property property, double x, double y, double z);
-    int syz_getD6(out double x, out double y, out double z, out double x2, out double y2, out double z2, int handle, Property property);
-    int syz_setD6(int handle, Property property, double x, double y, double z, double x2, double y2, double z2);
-    int syz_getBiquad(out BiquadConfig filter, int handle, Property property);
-    int syz_setBiquad(int handle, Property property, ref BiquadConfig filter);
-    int syz_biquadDesignIdentity(out BiquadConfig filter);
-    int syz_biquadDesignLowpass(out BiquadConfig filter, double frequency, double q);
-    int syz_biquadDesignHighpass(out BiquadConfig filter, double frequency, double q);
-    int syz_biquadDesignBandpass(out BiquadConfig filter, double frequency, double bw);
-    int syz_createContext(out int handle, Span<byte>? userdata, UserDataFreeCallback? UserdataFreeCallback);
-    int syz_createContextHeadless(out int handle, Span<byte>? userdata, UserDataFreeCallback? UserdataFreeCallback);
-    int syz_contextGetBlock(int handle, out Memory<float> block);
-    int syz_contextEnableEvents(int handle);
-    int syz_contextGetNextEvent(out AutomationEvent evt, int context, ulong flags);
-    int syz_registerStreamProtocol(string protocol, StreamOpenCallback callback, Span<byte>? userdata);
-    int syz_createStreamHandleFromStreamParams(out int handle, string protocol, string path, Span<byte>? param, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createStreamHandleFromMemory(out int handle, ulong len, Memory<byte> data, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createStreamHandleFromFile(out int handle, string path, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createStreamHandleFromCustomStream(out int handle, ref CustomStreamDefinition callbacks, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createStreamingGeneratorFromStreamParams(out int handle, int context, string protocol, string path, Span<byte>? param, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createStreamingGeneratorFromFile(out int handle, int context, string path, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createStreamingGeneratorFromStreamHandle(out int handle, int context, int stream_handle, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createBufferFromStreamParams(out int handle, string protocol, string path, Span<byte>? param, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createBufferFromEncodedData(out int handle, ulong len, Memory<byte> data, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createBufferFromFloatArray(out int handle, uint sr, uint channels, ulong frames, Memory<float> data, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createBufferFromFile(out int handle, string path, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createBufferFromStreamHandle(out int handle, int stream, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_bufferGetChannels(out uint channels, int handle);
-    int syz_bufferGetLengthInSamples(out uint samples, int handle);
-    int syz_bufferGetLengthInSeconds(out double seconds, int handle);
-    int syz_bufferGetSizeInBytes(out ulong size, int handle);
-    int syz_createBufferGenerator(out int handle, int context, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_sourceAddGenerator(int source, int generator);
-    int syz_sourceRemoveGenerator(int source, int generator);
-    int syz_createDirectSource(out int handle, int context, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createAngularPannedSource(out int handle, int context, PannerStrategy strategy, double azimuth, double elevation, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createScalarPannedSource(out int handle, int context, PannerStrategy strategy, double scalar, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createSource3D(out int handle, int context, PannerStrategy strategy, double x, double y, double z, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createNoiseGenerator(out int handle, int context, uint channels, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
+    nint syz_configDeleteBehavior(ulong obj, ref DeleteBehaviorConfig cfg);
+    nint syz_handleGetObjectType(out ObjectType type, ulong handle);
+    unsafe nint syz_handleGetUserdata(out void* data, ulong handle);
+    unsafe nint syz_handleSetUserdata(ulong handle, void* userdata, UserDataFreeCallback? callback);
+    nint syz_pause(ulong handle);
+    nint syz_play(ulong handle);
+    nint syz_getI(out nint value, ulong handle, Property property);
+    nint syz_setI(ulong target, Property property, nint value);
+    nint syz_getD(out double value, ulong handle, Property property);
+    nint syz_setD(ulong target, Property property, double value);
+    nint syz_setO(ulong target, Property property, ulong value);
+    nint syz_getD3(out double x, out double y, out double z, ulong handle, Property property);
+    nint syz_setD3(ulong handle, Property property, double x, double y, double z);
+    nint syz_getD6(out double x, out double y, out double z, out double x2, out double y2, out double z2, ulong handle, Property property);
+    nint syz_setD6(ulong handle, Property property, double x, double y, double z, double x2, double y2, double z2);
+    nint syz_getBiquad(out BiquadConfig filter, ulong handle, Property property);
+    nint syz_setBiquad(ulong handle, Property property, ref BiquadConfig filter);
+    nint syz_biquadDesignIdentity(out BiquadConfig filter);
+    nint syz_biquadDesignLowpass(out BiquadConfig filter, double frequency, double q);
+    nint syz_biquadDesignHighpass(out BiquadConfig filter, double frequency, double q);
+    nint syz_biquadDesignBandpass(out BiquadConfig filter, double frequency, double bw);
+    unsafe nint syz_createContext(out ulong handle, void* userdata, UserDataFreeCallback? UserdataFreeCallback);
+    unsafe nint syz_createContextHeadless(out ulong handle, void* userdata, UserDataFreeCallback? UserdataFreeCallback);
+    nint syz_contextGetBlock(ulong handle, out Memory<float> block);
+    nint syz_contextEnableEvents(ulong handle);
+    nint syz_contextGetNextEvent(out AutomationEvent evt, ulong context, ulong flags);
+    unsafe nint syz_registerStreamProtocol([MarshalAs(UnmanagedType.LPStr)] string protocol, StreamOpenCallback callback, void* userdata);
+    unsafe nint syz_createStreamHandleFromStreamParams(out ulong handle, [MarshalAs(UnmanagedType.LPStr)] string protocol, [MarshalAs(UnmanagedType.LPStr)] string path, void* param, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createStreamHandleFromMemory(out ulong handle, ulong len, Memory<byte> data, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createStreamHandleFromFile(out ulong handle, [MarshalAs(UnmanagedType.LPStr)] string path, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createStreamHandleFromCustomStream(out ulong handle, ref CustomStreamDefinition callbacks, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createStreamingGeneratorFromStreamParams(out ulong handle, ulong context, [MarshalAs(UnmanagedType.LPStr)] string protocol, [MarshalAs(UnmanagedType.LPStr)] string path, void* param, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createStreamingGeneratorFromFile(out ulong handle, ulong context, [MarshalAs(UnmanagedType.LPStr)] string path, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createStreamingGeneratorFromStreamHandle(out ulong handle, ulong context, ulong stream_handle, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createBufferFromStreamParams(out ulong handle, [MarshalAs(UnmanagedType.LPStr)] string protocol, [MarshalAs(UnmanagedType.LPStr)] string path, void* param, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createBufferFromEncodedData(out ulong handle, ulong len, Memory<byte> data, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createBufferFromFloatArray(out ulong handle, nuint sr, nuint channels, ulong frames, Memory<float> data, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createBufferFromFile(out ulong handle, [MarshalAs(UnmanagedType.LPStr)] string path, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createBufferFromStreamHandle(out ulong handle, ulong stream, void* userdata, UserDataFreeCallback? callback);
+    nint syz_bufferGetChannels(out uint channels, ulong handle);
+    nint syz_bufferGetLengthInSamples(out uint samples, ulong handle);
+    nint syz_bufferGetLengthInSeconds(out double seconds, ulong handle);
+    nint syz_bufferGetSizeInBytes(out ulong size, ulong handle);
+    unsafe nint syz_createBufferGenerator(out ulong handle, ulong context, void* config, void* userdata, UserDataFreeCallback? callback);
+    nint syz_sourceAddGenerator(ulong source, ulong generator);
+    nint syz_sourceRemoveGenerator(ulong source, ulong generator);
+    unsafe nint syz_createDirectSource(out ulong handle, ulong context, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createAngularPannedSource(out ulong handle, ulong context, PannerStrategy strategy, double azimuth, double elevation, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createScalarPannedSource(out ulong handle, ulong context, PannerStrategy strategy, double scalar, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createSource3D(out ulong handle, ulong context, PannerStrategy strategy, double x, double y, double z, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createNoiseGenerator(out ulong handle, ulong context, nuint channels, void* config, void* userdata, UserDataFreeCallback? callback);
     void syz_initSineBankConfig(out SineBankConfig cfg);
-    int syz_createFastSineBankGenerator(out int handle, int context, ref SineBankConfig cfg, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createFastSineBankGeneratorSine(out int handle, int context, double initial_frequency, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createFastSineBankGeneratorTriangle(out int handle, int context, double initial_frequency, uint partials, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createFastSineBankGeneratorSquare(out int handle, int context, double initial_frequency, uint partials, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createFastSineBankGeneratorSaw(out int handle, int context, double initial_frequency, uint partials, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createFastSineBankGenerator(out ulong handle, ulong context, ref SineBankConfig cfg, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createFastSineBankGeneratorSine(out ulong handle, ulong context, double initial_frequency, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createFastSineBankGeneratorTriangle(out ulong handle, ulong context, double initial_frequency, nuint partials, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createFastSineBankGeneratorSquare(out ulong handle, ulong context, double initial_frequency, uint partials, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createFastSineBankGeneratorSaw(out ulong handle, ulong context, double initial_frequency, uint partials, void* config, void* userdata, UserDataFreeCallback? callback);
     void syz_initRouteConfig(out RouteConfig cfg);
-    int syz_routingConfigRoute(int context, int output, int input, ref RouteConfig config);
-    int syz_routingRemoveRoute(int context, int output, int input, double fade_out);
-    int syz_routingRemoveAllRoutes(int context, int output, double fade_out);
-    int syz_effectReset(int handle);
-    int syz_createGlobalEcho(out int handle, int context, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_globalEchoSetTaps(int handle, uint len, Memory<EchoTapConfig> taps);
-    int syz_createGlobalFdnReverb(out int handle, int context, Span<byte>? config, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_createAutomationBatch(out int handle, int context, Span<byte>? userdata, UserDataFreeCallback? callback);
-    int syz_automationBatchAddCommands(int batch, ulong commands_count, Memory<AutomationCommandData> commands);
-    int syz_automationBatchExecute(int batch);
+    nint syz_routingConfigRoute(ulong context, ulong output, ulong input, ref RouteConfig config);
+    nint syz_routingRemoveRoute(ulong context, ulong output, ulong input, double fade_out);
+    nint syz_routingRemoveAllRoutes(ulong context, ulong output, double fade_out);
+    nint syz_effectReset(ulong handle);
+    unsafe nint syz_createGlobalEcho(out ulong handle, ulong context, void* config, void* userdata, UserDataFreeCallback? callback);
+    nint syz_globalEchoSetTaps(ulong handle, nuint len, Memory<EchoTapConfig> taps);
+    unsafe nint syz_createGlobalFdnReverb(out ulong handle, ulong context, void* config, void* userdata, UserDataFreeCallback? callback);
+    unsafe nint syz_createAutomationBatch(out ulong handle, ulong context, void* userdata, UserDataFreeCallback? callback);
+    nint syz_automationBatchAddCommands(ulong batch, ulong commands_count, Memory<AutomationCommandData> commands);
+    nint syz_automationBatchExecute(ulong batch);
 }
 
